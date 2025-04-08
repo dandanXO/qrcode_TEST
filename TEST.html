@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>QR Code 掃描器 with Loading Mask</title>
+  <style>
+    /* 隱藏掃描用區塊 */
+    #scanner-container, video, canvas {
+      display: none;
+    }
+    /* 全螢幕 iframe 的樣式 */
+    #qrIframe {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      border: none;
+      z-index: 9999;
+    }
+    /* 全頁遮罩 (Mask Loading) */
+    #maskLoading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font-size: 2em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+  </style>
+</head>
+<body>
+  <!-- 掃描相關的元素 -->
+  <div id="scanner-container">
+    <video id="video" autoplay></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <!-- Mask Loading -->
+  <div id="maskLoading">Loading...</div>
+
+  <!-- 載入 jsQR 函式庫 -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const maskLoading = document.getElementById("maskLoading");
+    let scanning = false;
+    let lastUrl = ""; // 紀錄上次掃描到的 URL
+
+    // 啟動 webcam 串流
+    function startVideo() {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(stream => {
+          video.srcObject = stream;
+          // 設定 playsinline 以確保在 iOS 上正常播放
+          video.setAttribute("playsinline", true);
+          video.play();
+          scanning = true;
+          requestAnimationFrame(scanFrame);
+        })
+        .catch(err => {
+          console.error("啟動攝影機失敗：", err);
+        });
+    }
+
+    // 每一幀進行掃描
+    function scanFrame() {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        // 調整 canvas 大小與影片相符
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert"
+        });
+        if (code) {
+          const qrContent = code.data;
+          // 驗證是否為有效 URL 並排除重複資料
+          if (/^https?:\/\//.test(qrContent) && qrContent !== lastUrl) {
+            lastUrl = qrContent;
+            openFullScreenIframe(qrContent);
+          }
+        }
+      }
+      if (scanning) {
+        requestAnimationFrame(scanFrame);
+      }
+    }
+
+    // 建立或更新全螢幕 iframe 並隱藏 loading 遮罩
+    function openFullScreenIframe(url) {
+      let iframe = document.getElementById("qrIframe");
+      // 顯示 loading 遮罩（flex 使其置中）
+      maskLoading.style.display = "flex";
+      if (!iframe) {
+        iframe = document.createElement("iframe");
+        iframe.id = "qrIframe";
+        document.body.appendChild(iframe);
+      }
+      // 當 iframe 內容載入完成後隱藏 loading 遮罩
+      iframe.onload = () => {
+        maskLoading.style.display = "none";
+      };
+      iframe.src = url;
+    }
+
+    // 頁面載入時啟動攝影機
+    window.addEventListener("load", startVideo);
+  </script>
+</body>
+</html>
