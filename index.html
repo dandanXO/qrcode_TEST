@@ -4,34 +4,60 @@
   <meta charset="UTF-8">
   <title>QR Code 掃描器 with Loading Mask 與 Barcode 支援</title>
   <style>
-    /* 隱藏掃描用區塊 */
+    /* 設定整個頁面的 container 為左右排列 */
+    #mainContainer {
+      display: flex;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+    }
+    /* 左側 20% */
+    #leftSide {
+      width: 20%;
+      background: #f0f0f0;
+      padding: 10px;
+      box-sizing: border-box;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+    }
+    /* 右側 80% */
+    #rightSide {
+      width: 80%;
+      position: relative; /* 為了讓 loading mask 定位相對於此區域 */
+      overflow: hidden;
+    }
+    /* 調整 scanner-container、video 與 canvas 在左側顯示 */
     #scanner-container, video, canvas {
-      display: none;
+      display: block;
+      width: 100%;
     }
-    /* 全螢幕 iframe 的樣式 */
+    /* 將影片與 canvas 調整自動縮放，保持比例 */
+    video, canvas {
+      max-width: 100%;
+      height: auto;
+    }
+    /* iframe 設定填滿右側區域 */
     #qrIframe {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
+      width: 100%;
+      height: 100%;
       border: none;
-      z-index: 9999;
+      display: block;
     }
-    /* 全頁遮罩 (Mask Loading) */
+    /* 右側 loading 遮罩 */
     #maskLoading {
-      position: fixed;
+      position: absolute;
       top: 0;
       left: 0;
-      width: 100vw;
-      height: 100vh;
+      width: 100%;
+      height: 100%;
       background: rgba(0, 0, 0, 0.7);
       color: #fff;
       font-size: 2em;
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 10000;
+      z-index: 1000;
     }
     /* 隱藏 barcode 輸入 */
     #barcodeInput {
@@ -40,20 +66,32 @@
       width: 0;
       height: 0;
     }
+    #video {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <!-- 掃描相關的元素 -->
-  <div id="scanner-container">
-    <video id="video" autoplay></video>
-    <canvas id="canvas"></canvas>
+  <div id="mainContainer">
+    <!-- 左側 20%：顯示掃描 QR Code 的影像 -->
+    <div id="leftSide">
+      <div id="scanner-container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+      </div>
+    </div>
+    
+    <!-- 右側 80%：顯示 iframe 與 loading -->
+    <div id="rightSide">
+      <!-- Mask Loading -->
+      <div id="maskLoading">Loading...</div>
+      <!-- iframe 放置掃描後的 URL 內容 -->
+      <iframe id="qrIframe"></iframe>
+    </div>
   </div>
-
+  
   <!-- 隱藏的 input 用來接收 barcode 掃描器輸入 -->
   <input type="text" id="barcodeInput" autocomplete="off" />
-
-  <!-- Mask Loading -->
-  <div id="maskLoading">Loading...</div>
 
   <!-- 載入 jsQR 函式庫 -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
@@ -72,8 +110,6 @@
       navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
         .then(stream => {
           video.srcObject = stream;
-          // 設定 playsinline 以確保在 iOS 上正常播放
-          video.setAttribute("playsinline", true);
           video.play();
           scanning = true;
           requestAnimationFrame(scanFrame);
@@ -97,7 +133,7 @@
         if (code) {
           const qrContent = code.data;
           // 驗證是否為有效 URL 並排除重複資料
-          if (/^https?:\/\//.test(qrContent) && qrContent !== lastUrl) {
+          if (/^https?:\/\/textile.cloud/.test(qrContent) && qrContent !== lastUrl) {
             lastUrl = qrContent;
             openFullScreenIframe(qrContent);
           }
@@ -111,7 +147,6 @@
     // 監聽 barcode input 的變化
     barcodeInput.addEventListener("change", function(e) {
       const barcodeValue = e.target.value.trim();
-      // 如果輸入值是 URL 並且不重複，則使用 iframe 開啟
       if (/^https?:\/\//.test(barcodeValue) && barcodeValue !== lastUrl) {
         lastUrl = barcodeValue;
         openFullScreenIframe(barcodeValue);
@@ -120,39 +155,29 @@
       e.target.value = "";
     });
 
-    // 當頁面載入時自動聚焦隱藏的 barcode input，方便掃描器自動填入
+    // 當頁面載入時自動聚焦隱藏的 barcode input
     window.addEventListener("load", function() {
       startVideo();
-      // 若條碼掃描器透過鍵盤模擬輸入，自動聚焦會接收輸入數據
       barcodeInput.focus();
     });
 
-    // 建立或更新全螢幕 iframe 並隱藏 loading 遮罩
+    // 建立或更新右側 iframe 並控制 loading 遮罩顯示
     function openFullScreenIframe(url) {
-      let iframe = document.getElementById("qrIframe");
-      // 顯示 loading 遮罩（flex 使其置中）
+      const iframe = document.getElementById("qrIframe");
+      // 顯示 loading 遮罩
       maskLoading.style.display = "flex";
-      if (!iframe) {
-        iframe = document.createElement("iframe");
-        iframe.id = "qrIframe";
-        document.body.appendChild(iframe);
-      }
-      // 當 iframe 內容載入完成後隱藏 loading 遮罩
       iframe.onload = () => {
         maskLoading.style.display = "none";
       };
       iframe.src = url;
     }
-    // 頁面載入時啟動攝影機
-    window.addEventListener("load", startVideo);
 
-    // 設定一個定時器，定期檢查焦點狀態
+    // 定時檢查 barcode input 是否失去焦點，若是則重新聚焦
     setInterval(() => {
-      // document.activeElement 取得目前獲得焦點的元素
       if (document.activeElement !== barcodeInput) {
         barcodeInput.focus();
       }
-    }, 3000);  // 每 3000 毫秒檢查一次，間隔可根據需求調整
+    }, 3000);
   </script>
 </body>
 </html>
